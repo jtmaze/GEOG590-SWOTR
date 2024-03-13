@@ -14,8 +14,8 @@ data_raw_path <- './data_raw/'
 
 # 2. Test SWOT data imaging -----------------------------------------------
 
-tester_path <- paste0(data_raw_path, 'SWOT_L2_HR_Raster_100m_UTM10T_N_x_x_x_501_013_118F_20230425T044105_20230425T044126_PIB0_01.nc')
-tester <- nc_open(tester_path)
+swot_path <- paste0(data_raw_path, 'SWOT1.nc')
+swot <- nc_open(swot)
 
 x <- ncvar_get(tester, 'x')
 y <- ncvar_get(tester, 'y')

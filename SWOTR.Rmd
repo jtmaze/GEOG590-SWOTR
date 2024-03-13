@@ -1,0 +1,57 @@
+---
+title: "SWOTR"
+author: "jtmaze"
+date: "2024-03-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Set up libaries & directories
+```{r Libaries & Directories, echo=FALSE}
+library(ncdf4)
+library(RColorBrewer)
+library(ggplot2)
+library(dplyr)
+library(terra)
+
+setwd('/Users/jmaze/Documents/projects/GEOG590-SWOTR')
+
+data_raw_path <- './data_raw/'
+```
+
+
+Read the SWOT Data
+```{r Read the SWOT Data}
+
+# The SWOT path names contain rich metadata such as observation time, cycle #, UTM zone, etc. After downloading, I changed the filename for simplicity. 
+swot_path <- paste0(data_raw_path, 'SWOT1.nc')
+swot <- nc_open(swot_path)
+
+# Get x and y values for data array
+x <- ncvar_get(swot, 'x')
+y <- ncvar_get(swot, 'y')
+
+wtr_frac_array <- ncvar_get(swot, 'water_area')
+
+```
+
+Visually inspect the raw SWOT data
+```{r}
+image(x, y, wtr_frac_array, col = rev(brewer.pal(10, 'RdBu')))
+```
+
+
+Read the global surface water occurrence dataset
+```{r}
+#
+gsw_occurance_path <- paste0(data_raw_path, "occurance.tif")
+gsw_occurance <- rast(gsw_occurance_path)
+image(gsw_occurance)
+```
+
+
+
