@@ -1,32 +1,48 @@
 ---
-title: "SWOTR"
-author: "jtmaze"
+title: "GEOG 590 Project SWOT with R (SWOTR)"
+author: "James Maze"
 date: "2024-03-13"
-output: html_document
+output: 
+  html_document:
+    css: html-md-01.css
+    fig_caption: yes
+    highlight: haddock
+    number_sections: yes
+    theme: cerulean
+    toc: yes
+    toc_float: true
+  
 ---
-Project Goal: To compare the preliminary SWOT L2_HR_Raster product to a widely adopted surface water map (Global Surface Water Occurance -- GSWO)
+```{r setup-options, echo = FALSE, strip.white = TRUE, style = "background: gray_80;"}
+options(width = 105)
+knitr::opts_chunk$set(dev = 'png', dpi = 300, cache = TRUE)
+#pdf.options(useDingbats = TRUE)
+```
 
-Background: The Surface Water and Ocean Topgraphy (SWOT) satellite launched in December of 2022 with the mission of measuring global surface water with high vertical (10cm) and horizontal (15cm) accuracy twice (on average) every 21 days. The vast majority of data is still not publicly available; however, NASA release a small subset of data for users to familiarize themselves with the file structure and data limitations/advantages. In this analysis, I'll explore beta released scene from SWOT and compare it to a widely adopted surface water map (GSWO)
+# Introduction #
 
-Area of Study: I chose a SWOT image from Oregon, which contains the Columbia River and the area around Portland/Vancouver. 
+Project Goal: To compare the preliminary SWOT L2_HR_Raster product with a widely adopted surface water map (Global Surface Water Occurrence -- GSWO) 
 
-Steps/Workflow:
+Background: The Surface Water and Ocean Topgraphy (SWOT) satellite launched in December of 2022, and will vastly enrich scientific knowledge of Earth's water cycle. The Ka-band Radar Interferometer (KaRIn) on board sends radar pulses Earth, and collects those pulses with two antennae. As the radar pulses return they reach each antenna with a different phase, because they traveled different distances (path lengths). Using the principles of physics and geometry underlying electromagnetic waves, NASA's algorithms can measure the elevation and presence of surface water. SWOT will measure global inland surface water with high vertical (10cm) and horizontal (15cm) accuracy twice (on average) every 21 days.
+
+Here's a fantastic animation NASA made showing SWOT in action! You can see the orbital path, measurement footprint and radar pulses. (https://swot.jpl.nasa.gov/resources/142/swot-global-coverage/)
+
+The vast majority of SWOT data is still not publicly available; however, NASA released a small preliminary beta version for scientists to familiarize themselves with the dataset's limitations and opportunities. The beta release is also a chance for users to build workflows and learn about the complex file structures. In this analysis, I'll explore a preliminary scene from SWOT and compare it to a widely adopted surface water map (GSWO).
+
+Area of Study: I selected a SWOT image from Oregon, which contains the Columbia River and the area around Portland/Vancouver. 
+
+# Overview of Steps/Workflow: #
 1. Read the SWOT in its ncdf format. 
 
 2. Read the Global Surface Water Occurance dataset (GSWO). Clip, project, and resample GSWO to match SWOT's extent, projection and resolution. 
 
-3. Compare the two datasets. 
+3. Compare the two data sets. 
 
-4. Modify the SWOT dataset to better match the GSWO data. 
+4. Modify the SWOT data set to better match the GSWO data. 
 
+# Set-up libraries & read data
 
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-
-Set up libaries & directories
+## Set up libraries & directories ##
 ```{r Libaries & Directories}
 library(ncdf4)
 library(RColorBrewer)
@@ -44,7 +60,7 @@ data_raw_path <- './data_raw/'
 ```
 
 
-Read the SWOT data
+## Read the SWOT data ##
 ```{r Read the SWOT Data}
 
 # The SWOT path names contain rich metadata such as observation time, cycle #, UTM zone, etc. After downloading, I changed the file name for simplicity. 
