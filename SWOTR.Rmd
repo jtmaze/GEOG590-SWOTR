@@ -4,6 +4,22 @@ author: "jtmaze"
 date: "2024-03-13"
 output: html_document
 ---
+Project Goal: To compare the preliminary SWOT L2_HR_Raster product to a widely adopted surface water map (Global Surface Water Occurance -- GSWO)
+
+Background: The Surface Water and Ocean Topgraphy (SWOT) satellite launched in December of 2022 with the mission of measuring global surface water with high vertical (10cm) and horizontal (15cm) accuracy twice (on average) every 21 days. The vast majority of data is still not publicly available; however, NASA release a small subset of data for users to familiarize themselves with the file structure and data limitations/advantages. In this analysis, I'll explore beta released scene from SWOT and compare it to a widely adopted surface water map (GSWO)
+
+Area of Study: I chose a SWOT image from Oregon, which contains the Columbia River and the area around Portland/Vancouver. 
+
+Steps/Workflow:
+1. Read the SWOT in its ncdf format. 
+
+2. Read the Global Surface Water Occurance dataset (GSWO). Clip, project, and resample GSWO to match SWOT's extent, projection and resolution. 
+
+3. Compare the two datasets. 
+
+4. Modify the SWOT dataset to better match the GSWO data. 
+
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -17,6 +33,9 @@ library(RColorBrewer)
 library(ggplot2)
 library(dplyr)
 library(terra)
+library(raster)
+
+
 
 setwd('/Users/jmaze/Documents/projects/GEOG590-SWOTR')
 
@@ -24,34 +43,120 @@ data_raw_path <- './data_raw/'
 ```
 
 
-Read the SWOT Data
+Read the SWOT data
 ```{r Read the SWOT Data}
 
-# The SWOT path names contain rich metadata such as observation time, cycle #, UTM zone, etc. After downloading, I changed the filename for simplicity. 
+# The SWOT path names contain rich metadata such as observation time, cycle #, UTM zone, etc. After downloading, I changed the file name for simplicity. 
 swot_path <- paste0(data_raw_path, 'SWOT1.nc')
-swot <- nc_open(swot_path)
+swot_nc <- nc_open(swot_path)
+# This function gets ncdf file's meta data, which is handy in later steps. 
+swot_nc_atts <- ncatt_get(swot_nc, 0)
 
-# Get x and y values for data array
-x <- ncvar_get(swot, 'x')
-y <- ncvar_get(swot, 'y')
-
-wtr_frac_array <- ncvar_get(swot, 'water_area')
-
-```
-
-Visually inspect the raw SWOT data
-```{r}
-image(x, y, wtr_frac_array, col = rev(brewer.pal(10, 'RdBu')))
 ```
 
 
 Read the global surface water occurrence dataset
 ```{r}
-#
 gsw_occurance_path <- paste0(data_raw_path, "occurance.tif")
 gsw_occurance <- rast(gsw_occurance_path)
-image(gsw_occurance)
 ```
 
+Clip the GSWO data to the SWOT image's footprint.
+
+```{r}
+
+min_x <- swot_nc_atts$geospatial_lon_min
+min_y <- swot_nc_atts$geospatial_lat_min
+max_x <- swot_nc_atts$geospatial_lon_max
+max_y <-swot_nc_atts$geospatial_lat_max
+
+bbox <- c(xmin = min_x, xmax = max_x, ymin = min_y, ymax = max_y)
+
+# Create a spatial extent object from the bounding box
+bbox_extent <- extent(bbox)
+
+# Clip the raster using the bounding box
+gsw_occurance <- crop(gsw_occurance, bbox_extent)
+
+```
+
+Mask GSWO to SWOT
+```{r}
+# Let's clip the GSWO data to the SWOT image's footprint
+# The SWOT data is projected to UTM10N; however, these bounds are in WSG:84 coordinates.
+# Clipping the GSWO data before projecting, will reduce the computational load. 
+swot_lf_lon <- swot_nc_atts$left_first_longitude
+swot_lf_lat <- swot_nc_atts$left_first_latitude
+swot_ll_lon <- swot_nc_atts$left_last_longitude
+swot_ll_lat <- swot_nc_atts$left_last_latitude
+swot_rf_lon <- swot_nc_atts$right_first_longitude
+swot_rf_lat <- swot_nc_atts$right_first_latitude
+swot_rl_lon <- swot_nc_atts$right_last_longitude
+swot_rl_lat <- swot_nc_atts$right_last_latitude
+
+coords <- matrix(c(swot_lf_lon, swot_lf_lat,  # left_first
+                   swot_ll_lon, swot_ll_lat,  # left_last
+                   swot_rl_lon, swot_rl_lat,  # right_last
+                   swot_rf_lon, swot_rf_lat,  # right_first
+                   swot_lf_lon, swot_lf_lat), # closing the polygon by repeating the first point
+                 byrow = TRUE, ncol = 2)
+
+poly <- vect(coords, type = "polygons")
+crs(poly) <- "EPSG:4326"
+
+gsw_occurance <- mask(gsw_occurance, poly, inverse = FALSE)
 
 
+```
+
+Reproject the GSWO data to match SWOT's projection. Resample the GSWO bringing it from 30m resolution to SWOT's 100m resolution. 
+```{r}
+
+swot_spatrast <- rast(swot_path)
+crs_swot <- crs(swot_spatrast)
+print(crs_swot)
+
+gsw_occurance <- project(gsw_occurance, crs_swot)
+gsw_occurance_resampled <- resample(gsw_occurance, swot_spatrast, method = "bilinear")
+
+
+# Clean up variables 
+#rm(gsw_occurance_clipped)
+```
+Does SWOT agree with the GSWO mask?
+```{r}
+brown_to_blue <- colorRampPalette(c("sienna3", "lightblue4", "blue"))(100)
+
+image(gsw_occurance_resampled, col = brown_to_blue)
+
+```
+The raw SWOT data is pretty noisy, and needs lots of cleaning to match the GSWO data! 
+```{r}
+image(swot_spatrast, col = brown_to_blue)
+```
+
+What are the distribution of values for the wtr_frac_pixels?
+```{r}
+x <- ncvar_get(swot_nc, 'x')
+y <- ncvar_get(swot_nc, 'y')
+wtr_frac_array <- ncvar_get(swot_nc, 'water_area')
+
+wtr_vector <- na.omit(as.vector(wtr_frac_array))
+wtr_frac_df <- data.frame(value = wtr_vector) 
+
+# Quick histogram for the SWOT
+pixel_histogram <- ggplot(data = wtr_frac_df,
+                          mapping = aes(x = value)) +
+  geom_histogram(bins = 500) +
+  xlim(-10, 100000) +
+  geom_vline(xintercept = 10000, color = 'red', linewidth = 1, linetype = "dashed") +
+  theme_bw() +
+  labs(title = "Distribution of water area pixels",
+       y = "Count (log scale)",
+       x = "Water pixel value (square meters)") +
+  scale_y_log10()
+
+(pixel_histogram)
+
+```
+The mask pixel values shouldn't exceed 10,000 square meters, and should never be less than zero. According to SWOTs documentation, erroneous pixels values are included for users to process at their discretion. The red line on this plot marks the 10,000 square meters cutoff. 
