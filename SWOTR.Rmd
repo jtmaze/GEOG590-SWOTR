@@ -2,16 +2,17 @@
 title: "GEOG 590 Project SWOT with R (SWOTR)"
 author: "James Maze"
 date: "2024-03-13"
-output: 
+output:
   html_document:
-    css: html-md-01.css
-    fig_caption: yes
+    css: "html-md-01.css"
+    fig_caption: true
     highlight: haddock
-    number_sections: yes
+    number_sections: true
     theme: cerulean
-    toc: yes
+    toc: true
     toc_float: true
-  
+  pdf_document:
+    toc: true
 ---
 ```{r setup-options, echo = FALSE, strip.white = TRUE, style = "background: gray_80;"}
 options(width = 105)
@@ -36,14 +37,14 @@ Area of Study: I selected a SWOT image from Oregon, which contains the Columbia 
 
 2. Read the Global Surface Water Occurance dataset (GSWO). Clip, project, and resample GSWO to match SWOT's extent, projection and resolution. 
 
-3. Compare the two data sets. 
+3. Compare the SWOT and GSWO data sets. 
 
 4. Modify the SWOT data set to better match the GSWO data. 
 
 # Set-up libraries & read data
 
 ## Set up libraries & directories ##
-```{r Libaries & Directories}
+```{r Libaries & Directories, results='hide', message=FALSE, warning=FALSE}
 library(ncdf4)
 library(RColorBrewer)
 library(ggplot2)
@@ -51,8 +52,6 @@ library(dplyr)
 library(terra)
 library(raster)
 library(leaflet)
-
-
 
 setwd('/Users/jmaze/Documents/projects/GEOG590-SWOTR')
 
@@ -66,21 +65,28 @@ data_raw_path <- './data_raw/'
 # The SWOT path names contain rich metadata such as observation time, cycle #, UTM zone, etc. After downloading, I changed the file name for simplicity. 
 swot_path <- paste0(data_raw_path, 'SWOT1.nc')
 swot_nc <- nc_open(swot_path)
+# Pulls the water 
+x <- ncvar_get(swot_nc, 'x')
+y <- ncvar_get(swot_nc, 'y')
+wtr_area_frac_array <- ncvar_get(swot_nc, 'water_area')
+wse_array <- ncvar_get(swot_nc, 'wse')
+
 # This function gets ncdf file's meta data, which is handy in later steps. 
 swot_nc_atts <- ncatt_get(swot_nc, 0)
 
 ```
 
 
-Read the global surface water occurrence dataset
-```{r}
+## Read the global surface water occurrence dataset ##
+```{r Read GSWO}
 gsw_occurance_path <- paste0(data_raw_path, "occurance.tif")
 gsw_occurance <- rast(gsw_occurance_path)
 ```
 
-Clip the GSWO data to the SWOT image's footprint.
+# Clip the GSWO data to our region of study #
 
-```{r}
+## Select the GSWO data within SWOT's bounding box ##
+```{r bbox GSWO}
 
 min_x <- swot_nc_atts$geospatial_lon_min
 min_y <- swot_nc_atts$geospatial_lat_min
@@ -90,24 +96,28 @@ max_y <-swot_nc_atts$geospatial_lat_max
 bbox <- c(xmin = min_x, xmax = max_x, ymin = min_y, ymax = max_y)
 
 # Create a spatial extent object from the bounding box
+
 bbox_extent <- extent(bbox)
 
-# Clip the raster using the bounding box
-gsw_occurance <- crop(gsw_occurance, bbox_extent)
 
+# Clip the raster using the bounding box
+gsw_occurance_bbox <- crop(gsw_occurance, bbox_extent)
+
+# Clean up memory
+rm(gsw_occurance)
 ```
 
-Check out the region of interest using leaflet and open street map. 
-```{r}
+## Check out the region of interest using leaflet and open street map. ##
+```{r Make a Leaflet Map}
 leaflet() %>%
   addTiles() %>%  # This adds the default OpenStreetMap basemap
-  addRasterImage(gsw_occurance, colors = terrain.colors(256), opacity = 0.8) %>%
+  addRasterImage(gsw_occurance_bbox, colors = terrain.colors(256), opacity = 0.8) %>%
   addLayersControl(overlayGroups = c("Raster Layer"), options = layersControlOptions(collapsed = FALSE))
 
 ``` 
 
-Mask GSWO to SWOT
-```{r}
+## Mask GSWO using SWOT's tile ##
+```{r Mask GSWO}
 # Let's clip the GSWO data to the SWOT image's footprint
 # The SWOT data is projected to UTM10N; however, these bounds are in WSG:84 coordinates.
 # Clipping the GSWO data before projecting, will reduce the computational load. 
@@ -130,45 +140,45 @@ coords <- matrix(c(swot_lf_lon, swot_lf_lat,  # left_first
 poly <- vect(coords, type = "polygons")
 crs(poly) <- "EPSG:4326"
 
-gsw_occurance <- mask(gsw_occurance, poly, inverse = FALSE)
-
+gsw_occurance_tiled <- mask(gsw_occurance_bbox, poly, inverse = FALSE)
 
 ```
 
-Reproject the GSWO data to match SWOT's projection. Resample the GSWO bringing it from 30m resolution to SWOT's 100m resolution. 
-```{r}
+ ## Reproject the GSWO data to match SWOT's projection. Resample the GSWO bringing it from 30m resolution to SWOT's 100m resolution.  ##
+```{r Reproject and Resample GSWO}
 
 swot_spatrast <- rast(swot_path)
 crs_swot <- crs(swot_spatrast)
-print(crs_swot)
 
-gsw_occurance <- project(gsw_occurance, crs_swot)
-gsw_occurance_resampled <- resample(gsw_occurance, swot_spatrast, method = "bilinear")
+gsw_occurance_reproj <- project(gsw_occurance_tiled, crs_swot)
+gsw_occurance_resampled <- resample(gsw_occurance_reproj, swot_spatrast, method = "bilinear")
 
-
-# Clean up variables 
-#rm(gsw_occurance_clipped)
+rm(gsw_occurance_tiled, gsw_occurance_reproj)
 ```
-Does SWOT agree with the GSWO mask?
-```{r}
+
+
+## Does SWOT agree with the GSWO mask? ##
+```{r Plot GSW Occurance}
 brown_to_blue <- colorRampPalette(c("sienna3", "lightblue4", "blue"))(100)
 
 image(gsw_occurance_resampled, col = brown_to_blue)
 
 ```
-The raw SWOT data is pretty noisy, and needs lots of cleaning to match the GSWO data! 
-```{r}
-image(swot_spatrast, col = brown_to_blue)
+
+## The raw SWOT data is pretty noisy, and needs lots of cleaning to match the GSWO data! ##
+```{r Map SWOT wtr_area fraction}
+
+image(wtr_area_frac_array, col = 'lightblue4')
+
 ```
 
-What are the distribution of values for the wtr_frac_pixels?
-```{r}
-x <- ncvar_get(swot_nc, 'x')
-y <- ncvar_get(swot_nc, 'y')
-wtr_frac_array <- ncvar_get(swot_nc, 'water_area')
+# Modify the SWOT to fit the GSWO mask #
 
-wtr_vector <- na.omit(as.vector(wtr_frac_array))
-wtr_frac_df <- data.frame(value = wtr_vector) 
+## What are the distribution of values for the wtr_frac_pixels? ##
+```{r Plot pixel distributions}
+
+wtr_vector <- na.omit(as.vector(wtr_area_frac_array))
+wtr_frac_df <- data.frame(value = wtr_vector)
 
 # Quick histogram for the SWOT
 pixel_histogram <- ggplot(data = wtr_frac_df,
