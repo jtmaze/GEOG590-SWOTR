@@ -27,13 +27,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 Set up libaries & directories
-```{r Libaries & Directories, echo=FALSE}
+```{r Libaries & Directories}
 library(ncdf4)
 library(RColorBrewer)
 library(ggplot2)
 library(dplyr)
 library(terra)
 library(raster)
+library(leaflet)
 
 
 
@@ -79,6 +80,15 @@ bbox_extent <- extent(bbox)
 gsw_occurance <- crop(gsw_occurance, bbox_extent)
 
 ```
+
+Check out the region of interest using leaflet and open street map. 
+```{r}
+leaflet() %>%
+  addTiles() %>%  # This adds the default OpenStreetMap basemap
+  addRasterImage(gsw_occurance, colors = terrain.colors(256), opacity = 0.8) %>%
+  addLayersControl(overlayGroups = c("Raster Layer"), options = layersControlOptions(collapsed = FALSE))
+
+``` 
 
 Mask GSWO to SWOT
 ```{r}
