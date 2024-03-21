@@ -15,7 +15,7 @@ data_raw_path <- './data_raw/'
 # 2. Test SWOT data imaging -----------------------------------------------
 
 swot_path <- paste0(data_raw_path, 'SWOT1.nc')
-swot <- nc_open(swot)
+tester <- nc_open(swot_path)
 
 x <- ncvar_get(tester, 'x')
 y <- ncvar_get(tester, 'y')
@@ -23,7 +23,7 @@ y <- ncvar_get(tester, 'y')
 
 #print(c(x, y))
 
-wtr_array <- ncvar_get(tester, 'water_area')
+wtr_array <- ncvar_get(tester, 'wse')
 range(wtr_array, na.rm = TRUE)
 image(x, y, wtr_array, col = rev(brewer.pal(10, 'RdBu')))
 

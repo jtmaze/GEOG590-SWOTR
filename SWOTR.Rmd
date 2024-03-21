@@ -24,16 +24,16 @@ knitr::opts_chunk$set(dev = 'png', dpi = 300, cache = TRUE)
 
 Project Goal: To compare the preliminary SWOT L2_HR_Raster product with a widely adopted surface water map (Global Surface Water Occurrence -- GSWO) 
 
-Background: The Surface Water and Ocean Topgraphy (SWOT) satellite launched in December of 2022, and will vastly enrich scientific knowledge of Earth's water cycle. The Ka-band Radar Interferometer (KaRIn) on board sends radar pulses Earth, and collects those pulses with two antennae. As the radar pulses return they reach each antenna with a different phase, because they traveled different distances (path lengths). Using the principles of physics and geometry underlying electromagnetic waves, NASA's algorithms can measure the elevation and presence of surface water. SWOT will measure global inland surface water with high vertical (10cm) and horizontal (15cm) accuracy twice (on average) every 21 days.
+Background: The Surface Water and Ocean Topgraphy (SWOT) satellite launched in December of 2022, and will vastly enrich scientific knowledge of Earth's water cycle. The Ka-band Radar Interferometer (KaRIn) on board sends radar pulses to Earth, and collects those pulses with two antennae. As the radar pulses return they reach each antenna with a different phase, because they traveled different distances (path lengths). Using the principles of physics and geometry underlying electromagnetic waves, NASA's algorithms can measure the elevation and presence of surface water. SWOT will measure global inland surface water with high vertical (10cm) and horizontal (15cm) accuracy twice (on average) every 21 days.
 
 Here's a fantastic animation NASA made showing SWOT in action! You can see the orbital path, measurement footprint and radar pulses. (https://swot.jpl.nasa.gov/resources/142/swot-global-coverage/)
 
-The vast majority of SWOT data is still not publicly available; however, NASA released a small preliminary beta version for scientists to familiarize themselves with the dataset's limitations and opportunities. The beta release is also a chance for users to build workflows and learn about the complex file structures. In this analysis, I'll explore a preliminary scene from SWOT and compare it to a widely adopted surface water map (GSWO).
+The vast majority of SWOT data is still not publicly available; however, NASA released a small preliminary beta version for scientists to familiarize themselves with the data set's limitations and opportunities. The beta release is also a chance for users to build workflows and learn about the complex file structures. In this analysis, I'll explore a preliminary scene from SWOT and compare it to a widely adopted surface water map (GSWO).
 
-Area of Study: I selected a SWOT image from Oregon, which contains the Columbia River and the area around Portland/Vancouver. 
+Area of Study: I selected a SWOT image from Oregon, which contains the Columbia River, the area around Portland/Vancouver and peaks Cascades peaks like Mt. Hood and Mt. Adams. Our SWOT image was taken in April 25th of 2023.
 
 # Overview of Steps/Workflow: #
-1. Read the SWOT in its ncdf format. 
+1. Read the SWOT data in its ncdf format. 
 
 2. Read the Global Surface Water Occurance dataset (GSWO). Clip, project, and resample GSWO to match SWOT's extent, projection and resolution. 
 
@@ -52,6 +52,7 @@ library(dplyr)
 library(terra)
 library(raster)
 library(leaflet)
+library(sp)
 
 setwd('/Users/jmaze/Documents/projects/GEOG590-SWOTR')
 
@@ -62,17 +63,26 @@ data_raw_path <- './data_raw/'
 ## Read the SWOT data ##
 ```{r Read the SWOT Data}
 
-# The SWOT path names contain rich metadata such as observation time, cycle #, UTM zone, etc. After downloading, I changed the file name for simplicity. 
+# The SWOT path names contain rich metadata such as observation time, cycle #, UTM zone, etc. 
+# After downloading, I changed the file name for simplicity. 
 swot_path <- paste0(data_raw_path, 'SWOT1.nc')
 swot_nc <- nc_open(swot_path)
-# Pulls the water 
+
+# Extracts the horizontal and vertical extents
 x <- ncvar_get(swot_nc, 'x')
 y <- ncvar_get(swot_nc, 'y')
+
+# Extracts the water fraction variable
 wtr_area_frac_array <- ncvar_get(swot_nc, 'water_area')
+# Extracts the water surface elevation variable
 wse_array <- ncvar_get(swot_nc, 'wse')
 
 # This function gets ncdf file's meta data, which is handy in later steps. 
 swot_nc_atts <- ncatt_get(swot_nc, 0)
+min_x <- swot_nc_atts$geospatial_lon_min
+min_y <- swot_nc_atts$geospatial_lat_min
+max_x <- swot_nc_atts$geospatial_lon_max
+max_y <-swot_nc_atts$geospatial_lat_max
 
 ```
 
@@ -83,10 +93,10 @@ gsw_occurance_path <- paste0(data_raw_path, "occurance.tif")
 gsw_occurance <- rast(gsw_occurance_path)
 ```
 
-# Clip the GSWO data to our region of study #
+# Clip, Mask, Resample and Reproject the GSWO data to match the SWOT data#
 
 ## Select the GSWO data within SWOT's bounding box ##
-```{r bbox GSWO}
+```{r bbox GSWO, error = TRUE}
 
 min_x <- swot_nc_atts$geospatial_lon_min
 min_y <- swot_nc_atts$geospatial_lat_min
@@ -104,17 +114,10 @@ bbox_extent <- extent(bbox)
 gsw_occurance_bbox <- crop(gsw_occurance, bbox_extent)
 
 # Clean up memory
-rm(gsw_occurance)
+#rm(gsw_occurance)
 ```
 
-## Check out the region of interest using leaflet and open street map. ##
-```{r Make a Leaflet Map}
-leaflet() %>%
-  addTiles() %>%  # This adds the default OpenStreetMap basemap
-  addRasterImage(gsw_occurance_bbox, colors = terrain.colors(256), opacity = 0.8) %>%
-  addLayersControl(overlayGroups = c("Raster Layer"), options = layersControlOptions(collapsed = FALSE))
 
-``` 
 
 ## Mask GSWO using SWOT's tile ##
 ```{r Mask GSWO}
@@ -144,8 +147,9 @@ gsw_occurance_tiled <- mask(gsw_occurance_bbox, poly, inverse = FALSE)
 
 ```
 
- ## Reproject the GSWO data to match SWOT's projection. Resample the GSWO bringing it from 30m resolution to SWOT's 100m resolution.  ##
+## Reproject the GSWO data to match SWOT's projection. Resample the GSWO bringing it from 30m resolution to SWOT's 100m resolution.  ##
 ```{r Reproject and Resample GSWO}
+
 
 swot_spatrast <- rast(swot_path)
 crs_swot <- crs(swot_spatrast)
@@ -153,7 +157,7 @@ crs_swot <- crs(swot_spatrast)
 gsw_occurance_reproj <- project(gsw_occurance_tiled, crs_swot)
 gsw_occurance_resampled <- resample(gsw_occurance_reproj, swot_spatrast, method = "bilinear")
 
-rm(gsw_occurance_tiled, gsw_occurance_reproj)
+#rm(gsw_occurance_tiled, gsw_occurance_reproj)
 ```
 
 
@@ -161,20 +165,19 @@ rm(gsw_occurance_tiled, gsw_occurance_reproj)
 ```{r Plot GSW Occurance}
 brown_to_blue <- colorRampPalette(c("sienna3", "lightblue4", "blue"))(100)
 
-image(gsw_occurance_resampled, col = brown_to_blue)
+image(gsw_occurance_resampled, col = brown_to_blue, main = 'GSW occurance map')
+image(wtr_area_frac_array, col = 'lightblue4', main = 'SWOT water fraction map')
 
 ```
 
-## The raw SWOT data is pretty noisy, and needs lots of cleaning to match the GSWO data! ##
-```{r Map SWOT wtr_area fraction}
-
-image(wtr_area_frac_array, col = 'lightblue4')
-
-```
+The raw SWOT data is pretty noisy, and needs lots of cleaning to match the GSWO data! There's lots of speckling, a large part of this problem is our choice of color scale. Also, there's an bizarre line running diagonal through the SWOT image. This is because SWOT cannot measure at NADIR (directly under the Satellite path).
 
 # Modify the SWOT to fit the GSWO mask #
 
 ## What are the distribution of values for the wtr_frac_pixels? ##
+
+In order to better visualize the SWOT data, we need to match our color scale with the pixel values. Let's inspect the values for water_frac_pixels.
+
 ```{r Plot pixel distributions}
 
 wtr_vector <- na.omit(as.vector(wtr_area_frac_array))
@@ -187,7 +190,7 @@ pixel_histogram <- ggplot(data = wtr_frac_df,
   xlim(-10, 100000) +
   geom_vline(xintercept = 10000, color = 'red', linewidth = 1, linetype = "dashed") +
   theme_bw() +
-  labs(title = "Distribution of water area pixels",
+  labs(title = "Distribution of SWOT water area pixels",
        y = "Count (log scale)",
        x = "Water pixel value (square meters)") +
   scale_y_log10()
@@ -195,4 +198,39 @@ pixel_histogram <- ggplot(data = wtr_frac_df,
 (pixel_histogram)
 
 ```
-The mask pixel values shouldn't exceed 10,000 square meters, and should never be less than zero. According to SWOTs documentation, erroneous pixels values are included for users to process at their discretion. The red line on this plot marks the 10,000 square meters cutoff. 
+
+The maximum pixel values should not exceed 10,000 square meters (100m x 100m = 10,000 square meters), and they should also never be less than zero (i.e. negative water fraction). The red line on this plot marks the 10,000 square meters cutoff. According to SWOT's documentation, erroneous pixels values are included for users to process at their discretion. NASA's scientists are prioritizing data flexibility over data fidelity. 
+
+## A crude fix for erroneous pixels ##
+
+Let's try eliminating the pixel values above 10,000 and below 100, by re-designating them as 10,000 and 0 respectively. This handles unrealistic values and should mitigate our speckling problem. By choosing a threshold of 100 (> 1% water area), the image should look less noisy. 
+```{r Pixel thresholding}
+
+# Make a copy of the swot_spatrast
+swot_spatrast_copy <- swot_spatrast
+# Apply the conditional replacements
+swot_spatrast_copy[["water_area"]][swot_spatrast_copy[["water_area"]] < 100] <- 0
+swot_spatrast_copy[["water_area"]][swot_spatrast_copy[["water_area"]] > 10000] <- 10000
+
+#Convert this specific layer to a RasterLayer for Leaflet:
+swot_rasterlayer_water_area <- raster(swot_spatrast_copy[["water_area"]])
+
+
+image(swot_rasterlayer_water_area, col = brown_to_blue, main = 'SWOT water fraction map V2')
+image(gsw_occurance_resampled, col = brown_to_blue, main = 'GSW occurance map')
+```
+This looks more realistic! You can see the pixels with the higher fraction of water area colored blue. Pixels with intermediate water fraction (>1%) are brown in the SWOT image. In GSWO, the land surface is brown and does not denote surface water. 
+
+## Check out the region of interest using leaflet and open street map. ##
+```{r Make a Leaflet Map}
+leaflet() %>%
+  addTiles() %>%  # This adds the default OpenStreetMap basemap
+  addRasterImage(swot_rasterlayer_water_area, colors = brown_to_blue, opacity = 0.7) %>%
+  addLayersControl(overlayGroups = c("Raster Layer"), options = layersControlOptions(collapsed = FALSE))
+
+``` 
+
+# Conclusion #
+
+Overall, there's still considerable speckling and noise in the SWOT image, but we produced something realistic in a few short steps. We should contemplate why the SWOT image appears to have so much more water compared to OpenStreetMap (OSM) and GSW. Context is key! Think about the timeframes involved; GSWO and OSM are drawn from long-term averages. Meanwhile, SWOT images a single day in April, a wet month for the Pacific Northwest. I checked Portland's weather on Apr. 25th 2023. Though it didn't rain, you could expect considerable water on the landscape. With satellite data, we should recognize there's never a "perfect" data set, and substantial processing decisions impact the final product. In my Master's, I'm encounter processing challenges like this daily!
+
